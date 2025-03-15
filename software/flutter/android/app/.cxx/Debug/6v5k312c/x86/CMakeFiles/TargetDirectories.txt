@@ -1,0 +1,2 @@
+C:/Users/hp/AndroidStudioProjects/alcohol_and_health_monitoring/android/app/.cxx/Debug/6v5k312c/x86/CMakeFiles/edit_cache.dir
+C:/Users/hp/AndroidStudioProjects/alcohol_and_health_monitoring/android/app/.cxx/Debug/6v5k312c/x86/CMakeFiles/rebuild_cache.dir

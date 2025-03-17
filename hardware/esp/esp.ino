@@ -156,6 +156,17 @@ void updatedata() {
         // Restart ESP32 after data upload
         Serial.println("Restarting ESP32...");
         delay(2000);  // Give some time to print the message
-        ESP.restart(); // Force ESP32 to restart
+        //ESP.restart(); // Force ESP32 to restart.   Uncomment this line and comment line next to this restart esp32 instead of max30100.
+        reset_max30100();    
     }
+}
+
+void reset_max30100() {
+    Serial.println("Resetting MAX30100 Sensor...");
+    pox.shutdown();  // Turn off the sensor
+    delay(500);
+    pox.begin();  // Restart the sensor
+    pox.setIRLedCurrent(MAX30100_LED_CURR_7_6MA);
+    pox.setOnBeatDetectedCallback(onBeatDetected);
+    Serial.println("MAX30100 Sensor Reset Done!");
 }

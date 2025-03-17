@@ -4,9 +4,6 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <FirebaseESP32.h>
-#include "MAX30100_PulseOximeter.h"
-
-#define REPORTING_PERIOD_MS 1000
 
 // Wi-Fi and Firebase Credentials
 #define WIFI_SSID "Autobonics_4G"
@@ -31,17 +28,9 @@ String path;
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature tempSensor(&oneWire);
 
-// Pulse Oximeter Setup
-PulseOximeter pox;
-uint32_t tsLastReport = 0;
-uint32_t tsLastTempRead = 0; // Separate timing for temperature updates
-unsigned long sendDataPrevMillis = 0; // Timing for Firebase uploads
-
 // Sensor Data
 float temperature = 0;
 int mq3_value = 0;
-float bpm = 0;
-float spo2 = 0;
 
 void firebaseSetup() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -49,7 +38,6 @@ void firebaseSetup() {
     while (WiFi.status() != WL_CONNECTED) {
         Serial.print(".");
         delay(300);
-        pox.update(); // Keep MAX30100 alive during Wi-Fi connection
     }
     Serial.println("\nConnected with IP: " + WiFi.localIP().toString());
 
@@ -65,104 +53,53 @@ void firebaseSetup() {
     while ((auth.token.uid) == "") {
         Serial.print('.');
         delay(1000);
-        pox.update(); // Keep MAX30100 alive during UID fetch
     }
     uid = auth.token.uid.c_str();
     Serial.println("User UID: " + uid);
     path = "devices/" + uid + "/reading";
 }
 
-void onBeatDetected() {
-    Serial.println("Beat!");
-}
-
 void setup() {
     Serial.begin(115200);
-
     firebaseSetup(); // Initialize Wi-Fi and Firebase
-
-    Serial.print("Initializing pulse oximeter...");
-    if (!pox.begin()) {
-        Serial.println("FAILED");
-        for (;;);  // Stop execution if sensor fails
-    }
-    Serial.println("SUCCESS");
-    pox.setIRLedCurrent(MAX30100_LED_CURR_7_6MA); 
-    pox.setOnBeatDetectedCallback(onBeatDetected);
-
-    delay(100); // Small delay to stabilize I2C before initializing temp sensor
+    delay(100);
     tempSensor.begin();
 }
 
 void loop() {
-    pox.update(); // Call this as frequently as possible
-
-    // Print sensor values and update MAX30100 data every second
-    if (millis() - tsLastReport > REPORTING_PERIOD_MS) {
-        bpm = pox.getHeartRate();
-        spo2 = pox.getSpO2();
-
-        Serial.print("Heart rate: ");
-        Serial.print(bpm);
-        Serial.print(" bpm / SpO2: ");
-        Serial.print(spo2);
-        Serial.println("%");
-
+    // Print sensor values and update every second
+    if (millis() % 1000 == 0) {
         Serial.print("Temperature: ");
         Serial.print(temperature);
         Serial.print(" °C / MQ3 Value: ");
         Serial.println(mq3_value);
-
-        tsLastReport = millis();
-        updatedata(); // Call updatedata after printing
+        updatedata();
     }
-
-    pox.update(); // Additional call to ensure frequent updates
 }
 
 void readdata() {
-    if (millis() - tsLastTempRead > 2000) {  
-        tempSensor.requestTemperatures();
-        temperature = tempSensor.getTempCByIndex(0);
-        tsLastTempRead = millis();
+    tempSensor.requestTemperatures();
+    temperature = tempSensor.getTempCByIndex(0);
+    mq3_value = analogRead(MQ3_PIN);
+    if (mq3_value < 2000) {
+        mq3_value = 0;
     }
-    mq3_value = analogRead(MQ3_PIN); 
 }
 
 void updatedata() {
     readdata(); // Read sensor data
-
-    if (Firebase.ready() && (millis() - sendDataPrevMillis > 10000)) {
+    static unsigned long sendDataPrevMillis = 0;
+    if (Firebase.ready() && (millis() - sendDataPrevMillis > 2000)) {
         sendDataPrevMillis = millis();
         FirebaseJson json;
         json.set("temperature", temperature);
         json.set("alcohol", mq3_value);
-        json.set("bpm", bpm);
-        json.set("oxygen", spo2);
         json.set(F("ts/.sv"), F("timestamp"));
-
-        // Print data being sent for debugging
-        Serial.print("Sending to Firebase - BPM: ");
-        Serial.print(bpm);
-        Serial.print(", SpO2: ");
-        Serial.println(spo2);
 
         if (Firebase.setJSON(fbdo, path.c_str(), json)) {
             Serial.println("Data upload success");
         } else {
             Serial.println("Data upload failed: " + fbdo.errorReason());
         }
-        delay(2000);  // Give some time to print the message
-        reset_max30100();
     }
-}
-
-void reset_max30100() {
-    Serial.println("Resetting MAX30100 Sensor...");
-    pox.shutdown();  // Turn off the sensor
-    delay(500);
-    pox.begin();  // Restart the sensor
-    pox.setIRLedCurrent(MAX30100_LED_CURR_7_6MA);
-    pox.setOnBeatDetectedCallback(onBeatDetected);
-    Serial.println("MAX30100 Sensor Reset Done!");
 }
